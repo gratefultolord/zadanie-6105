@@ -31,13 +31,13 @@ func (h *BidHandler) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/bids/{tenderId}/list", h.GetBidsForTender).Methods("GET")
 	router.HandleFunc("/bids/{bidId}/status", h.GetBidStatus).Methods("GET")
 	router.HandleFunc("/bids/{bidId}/status", h.UpdateBidStatus).Methods("PUT")
-	router.HandleFunc("/bids/{id}", h.UpdateBid).Methods("PUT")
 	router.HandleFunc("/bids/{bidId}/edit", h.UpdateBid).Methods("PATCH")
 	router.HandleFunc("/bids/{bidId}/submit_decision", h.SubmitBidDecision).Methods("PUT")
-	router.HandleFunc("/bids/{id}", h.DeleteBid).Methods("DELETE")
 	router.HandleFunc("/bids/{bidId}/feedback", h.SubmitBidFeedback).Methods("PUT")
-	router.HandleFunc("/bids/{id}/reviews", h.AddBidReview).Methods("POST")
 	router.HandleFunc("/bids/{bidId}/rollback/{version}", h.RollbackBidVersion).Methods("PUT")
+	router.HandleFunc("/bids/{id}", h.DeleteBid).Methods("DELETE")
+	router.HandleFunc("/bids/{id}/reviews", h.AddBidReview).Methods("POST")
+	router.HandleFunc("/bids/{tenderId}/reviews", h.GetBidReviews).Methods("GET")
 }
 
 func (h *BidHandler) CreateBid(w http.ResponseWriter, r *http.Request) {
@@ -50,33 +50,36 @@ func (h *BidHandler) CreateBid(w http.ResponseWriter, r *http.Request) {
 
 	exists, err := h.bidService.IsTenderExists(r.Context(), bid.TenderID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки тендера")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking tender existence")
 		return
 	}
 	if !exists {
-		utils.RespondWithError(w, http.StatusNotFound, "Тендер не найден")
+		utils.RespondWithError(w, http.StatusNotFound, "Tender not found")
 		return
 	}
 
-	username, ok := middlewares.GetUsernameFromContext(r.Context())
-	if !ok {
-		utils.RespondWithError(w, http.StatusUnauthorized, "Пользователь не аутентифицирован")
+	username, userOk := middlewares.GetUsernameFromContext(r.Context())
+	organizationID, orgOk := middlewares.GetOrganizationIDFromContext(r.Context())
+
+	if !userOk && !orgOk {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
-	authorized, err := h.bidService.IsUserAuthorizedToCreateBid(r.Context(), username, bid.TenderID)
+	authorized, err := h.bidService.IsAuthorizedToCreateBid(r.Context(), &bid, username, organizationID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
+	// Create the bid
 	if err := h.bidService.CreateBid(r.Context(), &bid); err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		utils.RespondWithError(w, http.StatusInternalServerError, "Failed to create bid")
 		return
 	}
 
@@ -84,9 +87,9 @@ func (h *BidHandler) CreateBid(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BidHandler) GetUserBids(w http.ResponseWriter, r *http.Request) {
-	username := r.URL.Query().Get("username")
-	if username == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing username")
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -109,9 +112,9 @@ func (h *BidHandler) GetBidsForTender(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	tenderID := vars["tenderId"]
 
-	username := r.URL.Query().Get("username")
-	if username == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing username")
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -123,12 +126,12 @@ func (h *BidHandler) GetBidsForTender(w http.ResponseWriter, r *http.Request) {
 
 	authorized, err := h.bidService.IsUserAuthorizedToViewBids(r.Context(), username, tenderID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
@@ -170,34 +173,34 @@ func (h *BidHandler) GetBidStatus(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bidID := vars["bidId"]
 
-	username := r.URL.Query().Get("username")
-	if username == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing username")
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
 	authorized, err := h.bidService.IsUserAuthorizedToViewBid(r.Context(), username, bidID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
 	status, err := h.bidService.GetBidStatus(r.Context(), bidID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			utils.RespondWithError(w, http.StatusNotFound, "Предложение не найдено")
+			utils.RespondWithError(w, http.StatusNotFound, "Bid not found")
 		} else {
 			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to retrieve bid status")
 		}
 		return
 	}
 
-	utils.RespondWithJSON(w, http.StatusOK, status)
+	utils.RespondWithJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 func (h *BidHandler) UpdateBidStatus(w http.ResponseWriter, r *http.Request) {
@@ -205,28 +208,32 @@ func (h *BidHandler) UpdateBidStatus(w http.ResponseWriter, r *http.Request) {
 	bidID := vars["bidId"]
 
 	status := r.URL.Query().Get("status")
-	username := r.URL.Query().Get("username")
+	if status == "" {
+		utils.RespondWithError(w, http.StatusBadRequest, "Missing status parameter")
+		return
+	}
 
-	if username == "" || status == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing required parameters")
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
 	authorized, err := h.bidService.IsUserAuthorizedToChangeStatus(r.Context(), username, bidID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
 	err = h.bidService.UpdateBidStatus(r.Context(), bidID, status)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			utils.RespondWithError(w, http.StatusNotFound, "Предложение не найдено")
+			utils.RespondWithError(w, http.StatusNotFound, "Bid not found")
 		} else {
 			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to update bid status")
 		}
@@ -234,7 +241,7 @@ func (h *BidHandler) UpdateBidStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.RespondWithJSON(w, http.StatusOK, map[string]string{
-		"message": "Статус предложения успешно изменен",
+		"message": "Bid status updated successfully",
 	})
 }
 
@@ -242,9 +249,9 @@ func (h *BidHandler) UpdateBid(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bidID := vars["bidId"]
 
-	username := r.URL.Query().Get("username")
-	if username == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing username")
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -256,19 +263,19 @@ func (h *BidHandler) UpdateBid(w http.ResponseWriter, r *http.Request) {
 
 	authorized, err := h.bidService.IsUserAuthorizedToEditBid(r.Context(), username, bidID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
 	bid, err := h.bidService.UpdateBid(r.Context(), bidID, &updatedBid)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			utils.RespondWithError(w, http.StatusNotFound, "Предложение не найдено")
+			utils.RespondWithError(w, http.StatusNotFound, "Bid not found")
 		} else {
 			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to update bid")
 		}
@@ -283,33 +290,37 @@ func (h *BidHandler) SubmitBidDecision(w http.ResponseWriter, r *http.Request) {
 	bidID := vars["bidId"]
 
 	decision := r.URL.Query().Get("decision")
-	username := r.URL.Query().Get("username")
-
-	if username == "" || decision == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing required parameters")
+	if decision == "" {
+		utils.RespondWithError(w, http.StatusBadRequest, "Missing decision parameter")
 		return
 	}
 
 	if decision != "Approved" && decision != "Rejected" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Invalid decision")
+		utils.RespondWithError(w, http.StatusBadRequest, "Invalid decision value")
+		return
+	}
+
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
 	authorized, err := h.bidService.IsUserAuthorizedToSubmitDecision(r.Context(), username, bidID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
 	err = h.bidService.SubmitBidDecision(r.Context(), bidID, decision)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			utils.RespondWithError(w, http.StatusNotFound, "Предложение не найдено")
+			utils.RespondWithError(w, http.StatusNotFound, "Bid not found")
 		} else {
 			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to submit bid decision")
 		}
@@ -317,13 +328,72 @@ func (h *BidHandler) SubmitBidDecision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.RespondWithJSON(w, http.StatusOK, map[string]string{
-		"message": "Решение по предложению успешно отправлено",
+		"message": "Bid decision submitted successfully",
+	})
+}
+
+func (h *BidHandler) SubmitBidFeedback(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	bidID := vars["bidId"]
+
+	feedback := r.URL.Query().Get("bidFeedback")
+	if feedback == "" {
+		utils.RespondWithError(w, http.StatusBadRequest, "Missing bidFeedback parameter")
+		return
+	}
+
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	authorized, err := h.bidService.IsUserAuthorizedToSubmitFeedback(r.Context(), username, bidID)
+	if err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
+		return
+	}
+
+	if !authorized {
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
+		return
+	}
+
+	err = h.bidService.SubmitBidFeedback(r.Context(), bidID, feedback)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			utils.RespondWithError(w, http.StatusNotFound, "Bid not found")
+		} else {
+			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to submit feedback")
+		}
+		return
+	}
+
+	utils.RespondWithJSON(w, http.StatusOK, map[string]string{
+		"message": "Bid feedback submitted successfully",
 	})
 }
 
 func (h *BidHandler) DeleteBid(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	authorized, err := h.bidService.IsUserAuthorizedToDeleteBid(r.Context(), username, id)
+	if err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
+		return
+	}
+
+	if !authorized {
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
+		return
+	}
 
 	if err := h.bidService.DeleteBid(r.Context(), id); err != nil {
 		log.Printf("Error deleting bid: %v", err)
@@ -336,7 +406,13 @@ func (h *BidHandler) DeleteBid(w http.ResponseWriter, r *http.Request) {
 
 func (h *BidHandler) AddBidReview(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	id := vars["id"]
+	bidID := vars["id"] // Bid ID
+
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
 
 	var review models.BidReview
 	if err := json.NewDecoder(r.Body).Decode(&review); err != nil {
@@ -344,47 +420,25 @@ func (h *BidHandler) AddBidReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review.BidID = id
+	review.BidID = bidID
 
-	utils.RespondWithJSON(w, http.StatusCreated, review)
-}
-
-func (h *BidHandler) SubmitBidFeedback(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	bidID := vars["bidId"]
-
-	feedback := r.URL.Query().Get("bidFeedback")
-	username := r.URL.Query().Get("username")
-
-	if username == "" || feedback == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing required parameters")
-		return
-	}
-
-	authorized, err := h.bidService.IsUserAuthorizedToSubmitFeedback(r.Context(), username, bidID)
+	authorized, err := h.bidService.IsUserAuthorizedToAddReview(r.Context(), username, bidID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
-	err = h.bidService.SubmitBidFeedback(r.Context(), bidID, feedback)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			utils.RespondWithError(w, http.StatusNotFound, "Предложение не найдено")
-		} else {
-			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to submit feedback")
-		}
+	if err := h.bidService.AddBidReview(r.Context(), &review); err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, "Failed to save bid review")
 		return
 	}
 
-	utils.RespondWithJSON(w, http.StatusOK, map[string]string{
-		"message": "Отзыв по предложению успешно отправлен",
-	})
+	utils.RespondWithJSON(w, http.StatusCreated, review)
 }
 
 func (h *BidHandler) RollbackBidVersion(w http.ResponseWriter, r *http.Request) {
@@ -398,27 +452,27 @@ func (h *BidHandler) RollbackBidVersion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	username := r.URL.Query().Get("username")
-	if username == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing required username parameter")
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
 	authorized, err := h.bidService.IsUserAuthorizedToRollback(r.Context(), username, bidID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
 	err = h.bidService.RollbackBidVersion(r.Context(), bidID, version)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			utils.RespondWithError(w, http.StatusNotFound, "Предложение или версия не найдены")
+			utils.RespondWithError(w, http.StatusNotFound, "Bid or version not found")
 		} else {
 			utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
 		}
@@ -426,7 +480,7 @@ func (h *BidHandler) RollbackBidVersion(w http.ResponseWriter, r *http.Request) 
 	}
 
 	utils.RespondWithJSON(w, http.StatusOK, map[string]string{
-		"message": "Предложение успешно откатано и версия инкрементирована",
+		"message": "Bid successfully rolled back and version incremented",
 	})
 }
 
@@ -435,7 +489,11 @@ func (h *BidHandler) GetBidReviews(w http.ResponseWriter, r *http.Request) {
 	tenderID := vars["tenderId"]
 
 	authorUsername := r.URL.Query().Get("authorUsername")
-	requesterUsername := r.URL.Query().Get("requesterUsername")
+	if authorUsername == "" {
+		utils.RespondWithError(w, http.StatusBadRequest, "Missing authorUsername parameter")
+		return
+	}
+
 	limit, err := utils.ParseQueryParamInt(r, "limit", 5)
 	if err != nil {
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid limit parameter")
@@ -447,28 +505,29 @@ func (h *BidHandler) GetBidReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if authorUsername == "" || requesterUsername == "" {
-		utils.RespondWithError(w, http.StatusBadRequest, "Missing required parameters")
+	username, ok := middlewares.GetUsernameFromContext(r.Context())
+	if !ok {
+		utils.RespondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
-	authorized, err := h.bidService.IsUserAuthorizedToViewReviews(r.Context(), requesterUsername, tenderID)
+	authorized, err := h.bidService.IsUserAuthorizedToViewReviews(r.Context(), username, tenderID)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		utils.RespondWithError(w, http.StatusInternalServerError, "Error checking user authorization")
 		return
 	}
 
 	if !authorized {
-		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions to perform this action")
 		return
 	}
 
 	reviews, err := h.bidService.GetBidReviews(r.Context(), tenderID, authorUsername, limit, offset)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			utils.RespondWithError(w, http.StatusNotFound, "Тендер или отзывы не найдены")
+			utils.RespondWithError(w, http.StatusNotFound, "Tender or reviews not found")
 		} else {
-			utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка получения отзывов")
+			utils.RespondWithError(w, http.StatusInternalServerError, "Error retrieving reviews")
 		}
 		return
 	}

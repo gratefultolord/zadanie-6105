@@ -7,11 +7,29 @@ import (
 )
 
 type BidService struct {
-	bidRepo repositories.BidRepository
+	bidRepo          repositories.BidRepository
+	employeeRepo     repositories.EmployeeRepository
+	organizationRepo repositories.OrganizationRepository
 }
 
-func NewBidService(bidRepo repositories.BidRepository) *BidService {
-	return &BidService{bidRepo: bidRepo}
+func NewBidService(
+	bidRepo repositories.BidRepository,
+	employeeRepo repositories.EmployeeRepository,
+	organizationRepo repositories.OrganizationRepository,
+) *BidService {
+	return &BidService{
+		bidRepo:          bidRepo,
+		employeeRepo:     employeeRepo,
+		organizationRepo: organizationRepo,
+	}
+}
+
+func (s *BidService) IsOrganizationExists(ctx context.Context, organizationID string) (bool, error) {
+	return s.organizationRepo.IsOrganizationExists(ctx, organizationID)
+}
+
+func (s *BidService) IsEmployeeExists(ctx context.Context, employeeID string) (bool, error) {
+	return s.employeeRepo.IsEmployeeExists(ctx, employeeID)
 }
 
 func (s *BidService) CreateBid(ctx context.Context, bid *models.Bid) error {
@@ -24,6 +42,35 @@ func (s *BidService) IsTenderExists(ctx context.Context, tenderID string) (bool,
 
 func (s *BidService) IsUserAuthorizedToCreateBid(ctx context.Context, username, tenderID string) (bool, error) {
 	return s.bidRepo.IsUserResponsibleForTender(ctx, username, tenderID)
+}
+
+func (s *BidService) IsAuthorizedToCreateBid(ctx context.Context, bid *models.Bid, username string, organizationID string) (bool, error) {
+	if username != "" && bid.AuthorType == models.AuthorTypeUser {
+		return s.isUserAuthorized(ctx, username, bid)
+	} else if organizationID != "" && bid.AuthorType == models.AuthorTypeOrganization {
+		return s.isOrganizationAuthorized(ctx, organizationID, bid)
+	} else {
+		return false, nil
+	}
+}
+
+func (s *BidService) isUserAuthorized(ctx context.Context, username string, bid *models.Bid) (bool, error) {
+	userID, err := s.GetAuthorIDByUsername(ctx, username)
+	if err != nil {
+		return false, err
+	}
+
+	if userID == bid.AuthorID {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *BidService) isOrganizationAuthorized(ctx context.Context, organizationID string, bid *models.Bid) (bool, error) {
+	if organizationID == bid.AuthorID {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *BidService) GetBid(ctx context.Context, id string) (*models.Bid, error) {
@@ -39,7 +86,7 @@ func (s *BidService) GetBidsForTender(ctx context.Context, tenderID string, limi
 }
 
 func (s *BidService) IsUserAuthorizedToViewBids(ctx context.Context, username, tenderID string) (bool, error) {
-	return s.bidRepo.IsUserResponsibleForTender(ctx, username, tenderID)
+	return s.bidRepo.IsUserAuthorizedToViewBids(ctx, tenderID, username)
 }
 
 func (s *BidService) GetAllBids(ctx context.Context) ([]*models.Bid, error) {
@@ -86,7 +133,7 @@ func (s *BidService) UpdateBid(ctx context.Context, bidID string, updatedBid *mo
 }
 
 func (s *BidService) IsUserAuthorizedToEditBid(ctx context.Context, username, bidID string) (bool, error) {
-	return s.bidRepo.IsUserResponsibleForBid(ctx, username, bidID)
+	return s.bidRepo.IsUserAuthorizedForBid(ctx, username, bidID)
 }
 
 func (s *BidService) SubmitBidDecision(ctx context.Context, bidID string, decision string) error {
@@ -115,6 +162,10 @@ func (s *BidService) IsUserAuthorizedToSubmitDecision(ctx context.Context, usern
 
 func (s *BidService) DeleteBid(ctx context.Context, id string) error {
 	return s.bidRepo.DeleteBid(ctx, id)
+}
+
+func (s *BidService) IsUserAuthorizedToDeleteBid(ctx context.Context, username, bidID string) (bool, error) {
+	return s.bidRepo.IsUserAuthorizedForBid(ctx, username, bidID)
 }
 
 func (s *BidService) SubmitBidFeedback(ctx context.Context, bidID string, feedback string) error {
@@ -163,4 +214,16 @@ func (s *BidService) GetBidReviews(ctx context.Context, tenderID string, authorU
 
 func (s *BidService) IsUserAuthorizedToViewReviews(ctx context.Context, username, tenderID string) (bool, error) {
 	return s.bidRepo.IsUserResponsibleForTender(ctx, username, tenderID)
+}
+
+func (s *BidService) AddBidReview(ctx context.Context, review *models.BidReview) error {
+	return s.bidRepo.CreateBidReview(ctx, review)
+}
+
+func (s *BidService) IsUserAuthorizedToAddReview(ctx context.Context, username string, bidID string) (bool, error) {
+	return true, nil
+}
+
+func (s *BidService) GetAuthorIDByUsername(ctx context.Context, username string) (string, error) {
+	return s.employeeRepo.GetEmployeeIDByUsername(ctx, username)
 }

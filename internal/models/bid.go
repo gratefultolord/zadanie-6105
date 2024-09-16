@@ -23,7 +23,7 @@ type Bid struct {
 	ID          string     `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
 	Name        string     `gorm:"type:varchar(100);not null" json:"name" validate:"required"`
 	Description string     `gorm:"type:text;not null" json:"description" validate:"required"`
-	Status      BidStatus  `json:"status"`
+	Status      BidStatus  `gorm:"type:varchar(50);default:'Created'" json:"status"`
 	TenderID    string     `gorm:"type:uuid;not null" json:"tenderId" validate:"required,uuid4"`
 	AuthorType  AuthorType `gorm:"type:varchar(50);not null" json:"authorType" validate:"required"`
 	AuthorID    string     `gorm:"type:uuid;not null" json:"authorId" validate:"required,uuid4"`
@@ -34,7 +34,7 @@ type Bid struct {
 
 type BidReview struct {
 	ID        string    `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	BidID     string    `gorm:"type:uuid;not null" json:"bid_id"`
+	BidID     string    `gorm:"type:uuid;not null" json:"bidId"`
 	Review    string    `gorm:"type:text;not null" json:"review"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
 }

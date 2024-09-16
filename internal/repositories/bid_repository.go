@@ -23,6 +23,9 @@ type BidRepository interface {
 	DeleteBid(ctx context.Context, id string) error
 	GetBidByVersion(ctx context.Context, bidID string, version int) (*models.Bid, error)
 	GetBidReviews(ctx context.Context, tenderID string, authorUsername string, limit, offset int) ([]*models.BidReview, error)
+	CreateBidReview(ctx context.Context, review *models.BidReview) error
+	IsUserAuthorizedToDeleteBid(ctx context.Context, username, bidID string) (bool, error)
+	IsUserAuthorizedToViewBids(ctx context.Context, tenderID string, username string) (bool, error)
 }
 
 type bidRepository struct {
@@ -216,4 +219,26 @@ func (r *bidRepository) GetBidReviews(ctx context.Context, tenderID string, auth
 	}
 
 	return reviews, nil
+}
+
+func (r *bidRepository) CreateBidReview(ctx context.Context, review *models.BidReview) error {
+	return r.db.WithContext(ctx).Create(review).Error
+}
+
+func (r *bidRepository) IsUserAuthorizedToDeleteBid(ctx context.Context, username, bidID string) (bool, error) {
+	return r.IsUserAuthorizedForBid(ctx, username, bidID)
+}
+
+func (r *bidRepository) IsUserAuthorizedToViewBids(ctx context.Context, tenderID string, username string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("tenders").
+		Joins("JOIN organization_responsible org_resp ON tenders.organization_id = org_resp.organization_id").
+		Joins("JOIN employee e ON org_resp.user_id = e.id").
+		Where("tenders.id = ? AND e.username = ?", tenderID, username).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

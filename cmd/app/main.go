@@ -27,6 +27,7 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
+	// Pass the database connection to the server setup
 	srv, err := server.NewServer(cfg, db)
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
