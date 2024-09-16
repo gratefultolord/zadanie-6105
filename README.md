@@ -17,7 +17,7 @@
 ```bash
 git clone https://github.com/gratefultolord/zadanie-6105.git
 cd zadanie-6105
-
+```
 ### 2. Настройка переменных окружения
 
 SERVER_ADDRESS=0.0.0.0:8080
@@ -33,24 +33,24 @@ POSTGRES_DATABASE=<dbname>
 
 ```bash
 go mod tidy
-
+```
 ### 4. Запуск проекта
 
 ```bash
 go run cmd/app/main.go
-
+```
 ## Настройка проекта через Docker
 
 ### 1. Построение Docker-образа
 
 ```bash
 docker build -t tender-service .
-
+```
 ### 2. Запуск контейнера
 
 ```bash
 docker run --env-file .env -p 8080:8080 tender-service
-
+```
 
 ## Тестирование
 
@@ -61,7 +61,6 @@ docker run --env-file .env -p 8080:8080 tender-service
 
 ```yaml
 GET /api/ping
-
 Response:
 
   200 OK
