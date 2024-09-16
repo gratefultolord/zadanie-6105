@@ -19,16 +19,16 @@ git clone https://github.com/gratefultolord/zadanie-6105.git
 cd zadanie-6105
 ```
 ### 2. Настройка переменных окружения
-
-SERVER_ADDRESS=0.0.0.0:8080
-POSTGRES_CONN=postgres://<username>:<password>@<host>:<port>/<dbname>
-POSTGRES_JDBC_URL=postgresql://<host>:<port>/<dbname>
-POSTGRES_USERNAME=<username>
-POSTGRES_PASSWORD=<password>
-POSTGRES_HOST=<host>
-POSTGRES_PORT=5432
-POSTGRES_DATABASE=<dbname>
-
+```
+SERVER_ADDRESS=0.0.0.0:8080  
+POSTGRES_CONN=postgres://<username>:<password>@<host>:<port>/<dbname>  
+POSTGRES_JDBC_URL=postgresql://<host>:<port>/<dbname>  
+POSTGRES_USERNAME=<username>  
+POSTGRES_PASSWORD=<password>  
+POSTGRES_HOST=<host>  
+POSTGRES_PORT=5432  
+POSTGRES_DATABASE=<dbname>  
+```
 ### 3. Установка зависимостей
 
 ```bash
