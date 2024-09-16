@@ -3,6 +3,8 @@ package repositories
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"time"
 	"zadanie-6105/internal/models"
 
 	"gorm.io/gorm"
@@ -17,7 +19,7 @@ type TenderRepository interface {
 	UpdateTender(ctx context.Context, tender *models.Tender) error
 	DeleteTender(ctx context.Context, id string) error
 	GetTenderVersions(ctx context.Context, id string) ([]*models.Tender, error)
-	// RollbackTenderVersion(ctx context.Context, id string, version int) error
+	RollbackTenderVersion(ctx context.Context, id string, version int) error
 	IsUserResponsibleForOrganization(username, organizationID string) (bool, error)
 	IsUserResponsibleForTender(username, tenderId string) (bool, error)
 	CheckUserExists(ctx context.Context, username string) (bool, error)
@@ -32,6 +34,7 @@ func NewTenderRepository(db *gorm.DB) TenderRepository {
 }
 
 func (r *tenderRepository) CreateTender(ctx context.Context, tender *models.Tender) error {
+	tender.Version = 1
 	return r.db.WithContext(ctx).Create(tender).Error
 }
 
@@ -109,17 +112,25 @@ func (r *tenderRepository) IsUserResponsibleForTender(username, tenderId string)
 }
 
 func (r *tenderRepository) UpdateTender(ctx context.Context, tender *models.Tender) error {
-	result := r.db.WithContext(ctx).Model(&models.Tender{}).
+	// Получаем текущую максимальную версию тендера
+	var currentVersion int
+	err := r.db.WithContext(ctx).Model(&models.Tender{}).
 		Where("id = ?", tender.ID).
-		Updates(map[string]interface{}{
-			"name":         tender.Name,
-			"description":  tender.Description,
-			"service_type": tender.ServiceType,
-			"status":       tender.Status,
-			"version":      gorm.Expr("version + 1"),
-		})
+		Select("MAX(version)").Scan(&currentVersion).Error
+	if err != nil {
+		return err
+	}
 
-	return result.Error
+	// Увеличиваем версию
+	tender.Version = currentVersion + 1
+
+	// Создаем новую запись с обновленными данными
+	err = r.db.WithContext(ctx).Create(tender).Error
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *tenderRepository) DeleteTender(ctx context.Context, id string) error {
@@ -135,30 +146,36 @@ func (r *tenderRepository) GetTenderVersions(ctx context.Context, id string) ([]
 	return versions, nil
 }
 
-// func (r *tenderRepository) RollbackTenderVersion(ctx context.Context, id string, version int) error {
-// 	var versionData models.Tender
+func (r *tenderRepository) RollbackTenderVersion(ctx context.Context, id string, version int) error {
+	// Получаем данные указанной версии
+	var versionData models.Tender
+	err := r.db.WithContext(ctx).Where("id = ? AND version = ?", id, version).First(&versionData).Error
+	if err != nil {
+		return fmt.Errorf("failed to find version %d for tender %s: %w", version, id, err)
+	}
 
-// 	// Ищем предыдущую версию по ID тендера и номеру версии
-// 	err := r.db.WithContext(ctx).Where("id = ? AND version = ?", id, version).First(&versionData).Error
-// 	if err != nil {
-// 		return fmt.Errorf("failed to find previous version: %w", err)
-// 	}
+	// Получаем текущую максимальную версию
+	var currentVersion int
+	err = r.db.WithContext(ctx).Model(&models.Tender{}).
+		Where("id = ?", id).
+		Select("MAX(version)").Scan(&currentVersion).Error
+	if err != nil {
+		return fmt.Errorf("failed to get current version for tender %s: %w", id, err)
+	}
 
-// 	log.Printf("Previous version data for tender %s: %+v", id, versionData)
+	// Создаем новую версию на основе выбранной
+	newVersion := versionData
+	newVersion.Version = currentVersion + 1
+	newVersion.CreatedAt = time.Now()
 
-// 	newVersion := versionData
-// 	newVersion.Version += 1
-// 	newVersion.VersionID = "" // GORM сгенерирует новый `version_id`
+	// Сохраняем новую версию
+	err = r.db.WithContext(ctx).Create(&newVersion).Error
+	if err != nil {
+		return fmt.Errorf("failed to create new version during rollback: %w", err)
+	}
 
-// 	err = r.db.WithContext(ctx).Create(&newVersion).Error
-// 	if err != nil {
-// 		return fmt.Errorf("failed to create new version: %w", err)
-// 	}
-
-// 	log.Printf("Tender %s successfully rolled back to version %d", id, version)
-
-// 	return nil
-// }
+	return nil
+}
 
 func (r *tenderRepository) IsUserResponsibleForOrganization(username, organizationID string) (bool, error) {
 	var count int64

@@ -21,7 +21,8 @@ const (
 )
 
 type Tender struct {
-	ID              string            `gorm:"type:uuid;default:uuid_generate_v4()" json:"id"`
+	ID              string            `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
+	Version         int               `gorm:"primaryKey" json:"version"`
 	Name            string            `gorm:"type:varchar(100);not null" json:"name" validate:"required"`
 	Description     string            `gorm:"type:text;not null" json:"description" validate:"required"`
 	ServiceType     TenderServiceType `gorm:"type:varchar(50);not null" json:"serviceType" validate:"required"`

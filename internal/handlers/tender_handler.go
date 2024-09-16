@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"zadanie-6105/internal/models"
 	"zadanie-6105/internal/services"
 	"zadanie-6105/pkg/utils"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
+	"gorm.io/gorm"
 )
 
 type TenderHandler struct {
@@ -27,7 +29,7 @@ func (h *TenderHandler) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/tenders/{id}", h.GetTender).Methods("GET")
 	router.HandleFunc("/tenders/{id}/status", h.GetTenderStatus).Methods("GET")
 	router.HandleFunc("/tenders/{id}/status", h.UpdateTenderStatus).Methods("PUT")
-	// router.HandleFunc("/tenders/{id}/rollback/{version}", h.RollbackTenderVersion).Methods("PUT")
+	router.HandleFunc("/tenders/{id}/rollback/{version}", h.RollbackTenderVersion).Methods("PUT")
 	router.HandleFunc("/tenders/new", h.CreateTender).Methods("POST")
 	router.HandleFunc("/tenders/{id}/edit", h.EditTender).Methods("PATCH")
 	router.HandleFunc("/tenders/{id}", h.DeleteTender).Methods("DELETE")
@@ -240,46 +242,46 @@ func (h *TenderHandler) EditTender(w http.ResponseWriter, r *http.Request) {
 	utils.RespondWithJSON(w, http.StatusOK, updatedTender)
 }
 
-// func (h *TenderHandler) RollbackTenderVersion(w http.ResponseWriter, r *http.Request) {
-// 	vars := mux.Vars(r)
-// 	tenderId := vars["id"]
-// 	versionStr := vars["version"]
+func (h *TenderHandler) RollbackTenderVersion(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	tenderId := vars["id"]
+	versionStr := vars["version"]
 
-// 	version, err := strconv.Atoi(versionStr)
-// 	if err != nil {
-// 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid version format")
-// 		return
-// 	}
+	version, err := strconv.Atoi(versionStr)
+	if err != nil {
+		utils.RespondWithError(w, http.StatusBadRequest, "Invalid version format")
+		return
+	}
 
-// 	username := r.URL.Query().Get("username")
-// 	if username == "" {
-// 		utils.RespondWithError(w, http.StatusBadRequest, "Missing username")
-// 		return
-// 	}
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		utils.RespondWithError(w, http.StatusBadRequest, "Missing username")
+		return
+	}
 
-// 	authorized, err := h.tenderService.IsUserAuthorizedToEditTender(username, tenderId)
-// 	if err != nil {
-// 		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
-// 		return
-// 	}
+	authorized, err := h.tenderService.IsUserAuthorizedToEditTender(username, tenderId)
+	if err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, "Ошибка проверки прав доступа")
+		return
+	}
 
-// 	if !authorized {
-// 		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
-// 		return
-// 	}
+	if !authorized {
+		utils.RespondWithError(w, http.StatusForbidden, "Недостаточно прав для выполнения действия")
+		return
+	}
 
-// 	updatedTender, err := h.tenderService.RollbackTenderVersion(r.Context(), tenderId, version)
-// 	if err != nil {
-// 		if err == sql.ErrNoRows {
-// 			utils.RespondWithError(w, http.StatusNotFound, "Tender or version not found")
-// 		} else {
-// 			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to rollback tender")
-// 		}
-// 		return
-// 	}
+	updatedTender, err := h.tenderService.RollbackTenderVersion(r.Context(), tenderId, version)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.RespondWithError(w, http.StatusNotFound, "Tender or version not found")
+		} else {
+			utils.RespondWithError(w, http.StatusInternalServerError, "Failed to rollback tender")
+		}
+		return
+	}
 
-// 	utils.RespondWithJSON(w, http.StatusOK, updatedTender)
-// }
+	utils.RespondWithJSON(w, http.StatusOK, updatedTender)
+}
 
 func (h *TenderHandler) DeleteTender(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

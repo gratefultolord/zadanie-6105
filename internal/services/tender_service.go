@@ -77,13 +77,14 @@ func (s *TenderService) GetTenderVersions(ctx context.Context, id string) ([]*mo
 	return s.tenderRepo.GetTenderVersions(ctx, id)
 }
 
-// func (s *TenderService) RollbackTenderVersion(ctx context.Context, tenderId string, version int) (*models.Tender, error) {
-// 	if err := s.tenderRepo.RollbackTenderVersion(ctx, tenderId, version); err != nil {
-// 		return nil, err
-// 	}
+func (s *TenderService) RollbackTenderVersion(ctx context.Context, tenderId string, version int) (*models.Tender, error) {
+	if err := s.tenderRepo.RollbackTenderVersion(ctx, tenderId, version); err != nil {
+		return nil, err
+	}
 
-// 	return s.tenderRepo.GetTenderByID(ctx, tenderId)
-// }
+	// Получаем последнюю версию тендера
+	return s.tenderRepo.GetTenderByID(ctx, tenderId)
+}
 
 func (s *TenderService) CheckUserExists(ctx context.Context, username string) (bool, error) {
 	return s.tenderRepo.CheckUserExists(ctx, username)
